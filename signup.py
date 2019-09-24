@@ -1,59 +1,82 @@
 import argparse
 import getpass
-import time
+import logging
 
 from selenium import webdriver
-from selenium.webdriver import ActionChains
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.wait import WebDriverWait
 
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 
-def main(username, password, room, slot):
+
+def main(username, password, sport, timeout=10):
     driver = webdriver.Firefox()
 
-    # Login
-    driver.get('https://sportsandculture.tudelft.nl/en/auth/connect_tudelft')
-    username_field = driver.find_element_by_id('user_id')
-    password_field = driver.find_element_by_id('password')
-    login_button = driver.find_element_by_class_name('login')
+    logging.info(f'Started signup for {sport}')
 
-    username_field.send_keys(username)
-    password_field.send_keys(password)
-    login_button.click()
+    try:
+        # Login
+        driver.get('https://sportsandculture.tudelft.nl/en/auth/connect_tudelft')
+        username_field = driver.find_element_by_id('user_id')
+        password_field = driver.find_element_by_id('password')
+        login_button = driver.find_element_by_class_name('login')
 
-    # Wait until login completed
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CLASS_NAME, "alert-success"))
-    )
+        username_field.send_keys(username)
+        password_field.send_keys(password)
+        login_button.click()
 
-    # TROUGH CALENDAR
-    # # Switch to DOJO calendar
-    driver.get('https://sportsandculture.tudelft.nl/en/bookings/view/new')
-    time.sleep(5)  # Wait until page stupid JS is loaded
-    room_selector = Select(driver.find_element_by_id('iResourceID'))
-    room_selector.select_by_visible_text('{}'.format(room))
+        # Wait until login completed
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "alert-success"))
+        )
 
-    # Wait until elements in calendar are loaded
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CLASS_NAME, "fc-event"))
-    )
+        logging.info('Finished signing in to TU account')
 
-    # Select slot
-    slot = driver.find_element_by_xpath('//*[contains(text(), "{}")]'.format(slot))
-    parent = slot.find_element_by_xpath('..')
-    driver.execute_script("arguments[0].scrollIntoView(true);", parent)
-    ActionChains(driver).move_to_element(parent).click().perform()
+        # Open timetable iframe directly
+        driver.get('https://services.sc.tudelft.nl/?lang=en')
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "fc-sticky"))
+        )
 
-    # Wait for popup
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.ID, "addBookingButton"))
-    )
+        logging.info('Loaded timetable')
 
-    # Finalize booking
-    booking_button = driver.find_element_by_id('addBookingButton')
-    driver.execute_script("arguments[0].click();", booking_button)
+        # Click on sports box in schedule
+        box = driver.find_element_by_xpath(f"//*[contains(text(), '{sport}')]")
+        box.click()
+
+        logging.info('Found the item you were looking for in the timetable')
+
+        # Wait until sign-up modal is loaded
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "content-page-modal"))
+        )
+
+        logging.info('Proceeding signup (1) ...')
+
+        signup_button = driver.find_element_by_xpath(f"//*[contains(text(), 'Sign up')]")
+        course_view_link = signup_button.get_attribute('href')
+        driver.get(course_view_link)
+
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.ID, "courseView"))
+        )
+
+        logging.info('Proceeding signup (2) ...')
+
+        booking_button = driver.find_element_by_xpath("//input[@value='Bookings']")
+        booking_button.click()
+
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "alert-success"))
+        )
+
+        logging.info('Successful signup confirmed!')
+
+    except TimeoutException:
+        logging.error(f'Failed to signup, timeout ({timeout}) exceeded')
+        exit(1)
 
 
 if __name__ == '__main__':
@@ -62,10 +85,8 @@ if __name__ == '__main__':
                         help='TU Delft username')
     parser.add_argument('--password', type=str,
                         help='TU Delft password')
-    parser.add_argument('--room', type=str, default='DOJO',
+    parser.add_argument('--sport', type=str, required=True,
                         help='Room on calendar')
-    parser.add_argument('--slot', type=str, default='Krav Maga',
-                        help='String slot can be identified with')
     args = parser.parse_args()
 
     if not args.password:
@@ -75,7 +96,4 @@ if __name__ == '__main__':
 
     username = args.username
 
-    room = args.room
-    slot = args.slot
-
-    main(username, password, room, slot)
+    main(username, password, args.sport)
