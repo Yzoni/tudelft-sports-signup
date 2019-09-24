@@ -7,14 +7,18 @@ import logging
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 
 
-def main(username, password, sport, timeout=10):
-    driver = webdriver.Firefox()
+def main(username, password, sport, timeout=10, headless=False):
+    options = Options()
+    if headless:
+        options.headless = True
+    driver = webdriver.Firefox(options=options)
 
     logging.info(f'Started signup for {sport}')
 
@@ -78,7 +82,8 @@ def main(username, password, sport, timeout=10):
 
     except TimeoutException:
         logging.error(f'Failed to signup, timeout ({timeout}) exceeded')
-        exit(1)
+    finally:
+        driver.quit()
 
 
 if __name__ == '__main__':
@@ -89,6 +94,10 @@ if __name__ == '__main__':
                         help='TU Delft password')
     parser.add_argument('--sport', type=str, required=True,
                         help='Room on calendar')
+    parser.add_argument('--timeout', type=int, default=10,
+                        help='How long too wait on page loads')
+    parser.add_argument('--headless', action='store_true', default=False,
+                        help='Spawn selenium headless')
     args = parser.parse_args()
 
     if not args.password:
@@ -98,4 +107,4 @@ if __name__ == '__main__':
 
     username = args.username
 
-    main(username, password, args.sport)
+    main(username, password, args.sport, args.timeout, args.headless)
